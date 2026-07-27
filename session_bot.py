@@ -16,7 +16,7 @@ from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PasswordHashInvali
 
 # ========== التوكنات (ضع توكنات البوتات هنا) ==========
 BOT_TOKENS = [
-    "8770149502:AAFkmj14adoaUHCFHXcBO9aNwjjDdpcfuLY",  # البوت الرئيسي
+    "8875360747:AAHZH8ti8BTzA8_Gzo6QV6ex4OsaJyoBovI",  # البوت الرئيسي
     # أضف توكنات بوتات أخرى هنا إذا أردت
 ]
 # =====================================================
