@@ -5,18 +5,17 @@ import subprocess
 import json
 import re
 from datetime import datetime
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ====== حل جذري لمشكلة Event Loop ======
-# يجب إنشاء حلقة الأحداث وضبطها كأول خطوة، قبل أي استيراد لـ pyrogram
 try:
-    # محاولة الحصول على الحلقة الحالية
     asyncio.get_running_loop()
 except RuntimeError:
-    # إذا لم تكن موجودة، ننشئ حلقة جديدة ونضبطها
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-# ====== الآن استيراد Pyrogram بأمان ======
+# ====== استيراد Pyrogram ======
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
@@ -25,6 +24,7 @@ API_ID = int(os.getenv('API_ID', 0))
 API_HASH = os.getenv('API_HASH', '')
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 WORK_DIR = os.getenv('WORK_DIR', '/tmp/sessions')
+PORT = int(os.getenv('PORT', 10000))
 
 if not API_ID or not API_HASH or not BOT_TOKEN:
     print("خطأ: تأكد من تعيين API_ID, API_HASH, BOT_TOKEN")
@@ -32,8 +32,28 @@ if not API_ID or not API_HASH or not BOT_TOKEN:
 
 os.makedirs(WORK_DIR, exist_ok=True)
 
-# ====== إنشاء العميل ======
-# تم إضافة معامل workdir لتحديد مكان حفظ الجلسات
+# ====== خادم HTTP للإبقاء على البوت نشطاً في Render ======
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    
+    def log_message(self, format, *args):
+        return  # تعطيل التسجيل لتقليل الضجيج
+
+def run_health_server():
+    try:
+        server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+        server.serve_forever()
+    except Exception as e:
+        print(f"⚠️ خادم الصحة: {e}")
+
+# تشغيل خادم الصحة في خيط منفصل
+Thread(target=run_health_server, daemon=True).start()
+print(f"✅ خادم الصحة يعمل على المنفذ {PORT}")
+
+# ====== إنشاء عميل Pyrogram ======
 app = Client(
     "main_bot",
     api_id=API_ID,
@@ -42,7 +62,7 @@ app = Client(
     workdir=WORK_DIR
 )
 
-# ====== الأدوات المساعدة (بدون تغيير) ======
+# ====== الأدوات المساعدة ======
 def extract_tokens(text):
     patterns = {
         'Bot Token': r'\d+:[A-Za-z0-9_\-]{35,}',
@@ -73,7 +93,7 @@ def read_session_file(file_path):
     except:
         return "لا يمكن قراءة الملف"
 
-# ====== أزرار الإنلاين (بدون تغيير) ======
+# ====== أزرار الإنلاين ======
 def main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 استخراج الجلسات", callback_data="extract_sessions")],
@@ -139,7 +159,7 @@ async def handle_file(client: Client, message: Message):
     except Exception as e:
         await message.reply_text(f"❌ خطأ في الرفع: {str(e)}")
 
-# ====== معالج استدعاء الأزرار (مع التعديل) ======
+# ====== معالج استدعاء الأزرار ======
 @app.on_callback_query()
 async def handle_callback(client: Client, callback_query):
     data = callback_query.data
@@ -209,7 +229,6 @@ async def handle_callback(client: Client, callback_query):
         try:
             os.remove(file_path)
             await callback_query.answer("🗑️ تم حذف الملف", show_alert=True)
-            # إعادة تحميل القائمة
             await handle_callback(client, callback_query)
         except:
             await callback_query.answer("❌ فشل الحذف", show_alert=True)
@@ -294,7 +313,7 @@ async def handle_callback(client: Client, callback_query):
 """
         await message.edit_text(info, reply_markup=main_keyboard())
 
-# ====== تشغيل البوت بشكل آمن ======
+# ====== تشغيل البوت ======
 async def main():
     print("🚀 بدء تشغيل البوت...")
     try:
@@ -304,7 +323,6 @@ async def main():
         print(f"📱 المعرف: {me.id}")
         print(f"📝 الاسم: {me.first_name or me.last_name or 'غير متاح'}")
         print("🔄 في انتظار الأوامر...")
-        # استخدام wait_for_disconnect() بدلاً من Event().wait()
         await asyncio.Event().wait()
     except Exception as e:
         print(f"❌ خطأ: {e}")
@@ -318,7 +336,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 تم إيقاف البوت")
     except RuntimeError as e:
-        # حلقة احتياطية في حالة فشل asyncio.run
         print(f"⚠️ خطأ في الحلقة: {e}. محاولة التشغيل بطريقة بديلة...")
         loop = asyncio.get_event_loop()
         loop.run_until_complete(main())
