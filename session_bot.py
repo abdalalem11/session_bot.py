@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ======== الإعدادات ========
 BOT_TOKEN = "8770149502:AAFkmj14adoaUHCFHXcBO9aNwjjDdpcfuLY"
-DEVELOPER_ID = 123456789  # غيّر هذا إلى معرفك الرقمي
+DEVELOPER_ID = 1170411845  # تم التحديث
 # ===========================
 
 # تفعيل التسجيل
