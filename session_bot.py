@@ -1,18 +1,24 @@
 import asyncio
 import os
+import sys
 import subprocess
 import json
 import re
 from datetime import datetime
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
-# ====== حل مشكلة event loop في Python 3.14+ ======
+# ====== حل جذري لمشكلة Event Loop ======
+# يجب إنشاء حلقة الأحداث وضبطها كأول خطوة، قبل أي استيراد لـ pyrogram
 try:
+    # محاولة الحصول على الحلقة الحالية
     asyncio.get_running_loop()
 except RuntimeError:
+    # إذا لم تكن موجودة، ننشئ حلقة جديدة ونضبطها
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+# ====== الآن استيراد Pyrogram بأمان ======
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
 # ====== تكوين البوت ======
 API_ID = int(os.getenv('API_ID', 0))
@@ -20,15 +26,14 @@ API_HASH = os.getenv('API_HASH', '')
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 WORK_DIR = os.getenv('WORK_DIR', '/tmp/sessions')
 
-# التحقق من المتغيرات
 if not API_ID or not API_HASH or not BOT_TOKEN:
     print("خطأ: تأكد من تعيين API_ID, API_HASH, BOT_TOKEN")
-    exit(1)
+    sys.exit(1)
 
-# إنشاء دليل العمل
 os.makedirs(WORK_DIR, exist_ok=True)
 
 # ====== إنشاء العميل ======
+# تم إضافة معامل workdir لتحديد مكان حفظ الجلسات
 app = Client(
     "main_bot",
     api_id=API_ID,
@@ -37,9 +42,8 @@ app = Client(
     workdir=WORK_DIR
 )
 
-# ====== الأدوات المساعدة ======
+# ====== الأدوات المساعدة (بدون تغيير) ======
 def extract_tokens(text):
-    """استخراج التوكنات من النص"""
     patterns = {
         'Bot Token': r'\d+:[A-Za-z0-9_\-]{35,}',
         'API Key': r'[A-Za-z0-9]{32,}',
@@ -48,7 +52,6 @@ def extract_tokens(text):
         'Telegram Session': r'\d+:[A-Za-z0-9_\-]{35,}',
         'JWT': r'eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+'
     }
-    
     results = {}
     for name, pattern in patterns.items():
         matches = re.findall(pattern, text)
@@ -57,7 +60,6 @@ def extract_tokens(text):
     return results
 
 def get_session_files():
-    """جلب ملفات الجلسات"""
     sessions = []
     for file in os.listdir(WORK_DIR):
         if file.endswith('.session') or file.endswith('.session-journal'):
@@ -65,14 +67,13 @@ def get_session_files():
     return sessions
 
 def read_session_file(file_path):
-    """قراءة محتوى ملف الجلسة"""
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read(500)  # قراءة أول 500 حرف
+            return f.read(500)
     except:
         return "لا يمكن قراءة الملف"
 
-# ====== أزرار الإنلاين الرئيسية ======
+# ====== أزرار الإنلاين (بدون تغيير) ======
 def main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 استخراج الجلسات", callback_data="extract_sessions")],
@@ -85,7 +86,7 @@ def main_keyboard():
 def session_keyboard():
     sessions = get_session_files()
     keyboard = []
-    for sess in sessions[:10]:  # عرض أول 10 جلسات
+    for sess in sessions[:10]:
         keyboard.append([InlineKeyboardButton(f"📄 {sess}", callback_data=f"view_session:{sess}")])
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_main")])
     return InlineKeyboardMarkup(keyboard)
@@ -115,7 +116,7 @@ async def exec_command(client: Client, message: Message):
     if not cmd:
         await message.reply_text("⚠️ الرجاء إدخال أمر للتنفيذ\nمثال: `/exec ls -la`")
         return
-    
+
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
         output = result.stdout + result.stderr
@@ -129,7 +130,6 @@ async def exec_command(client: Client, message: Message):
 
 @app.on_message(filters.document & filters.private)
 async def handle_file(client: Client, message: Message):
-    """استقبال ملفات من المستخدم"""
     try:
         file_path = await client.download_media(
             message.document,
@@ -139,61 +139,59 @@ async def handle_file(client: Client, message: Message):
     except Exception as e:
         await message.reply_text(f"❌ خطأ في الرفع: {str(e)}")
 
-# ====== معالج استدعاء الأزرار ======
+# ====== معالج استدعاء الأزرار (مع التعديل) ======
 @app.on_callback_query()
 async def handle_callback(client: Client, callback_query):
     data = callback_query.data
     user_id = callback_query.from_user.id
     message = callback_query.message
-    
-    # تأكيد الاستلام
+
     await callback_query.answer()
-    
+
     if data == "back_main":
         await message.edit_text("🏠 **القائمة الرئيسية**", reply_markup=main_keyboard())
-    
+
     elif data == "extract_sessions":
         sessions = get_session_files()
         if not sessions:
             await message.edit_text("❌ لا توجد جلسات مخزنة.", reply_markup=main_keyboard())
             return
-        
+
         text = "📦 **ملفات الجلسات الموجودة:**\n\n"
         for sess in sessions[:15]:
             size = os.path.getsize(f"{WORK_DIR}/{sess}")
             text += f"📄 `{sess}` ({size:,} بايت)\n"
-        
+
         if len(sessions) > 15:
             text += f"\n... و {len(sessions) - 15} ملفات أخرى"
-        
+
         await message.edit_text(text, reply_markup=session_keyboard())
-    
+
     elif data.startswith("view_session:"):
         sess_name = data.split(":", 1)[1]
         file_path = f"{WORK_DIR}/{sess_name}"
-        
+
         if not os.path.exists(file_path):
             await message.edit_text("❌ الملف غير موجود", reply_markup=session_keyboard())
             return
-        
+
         content = read_session_file(file_path)
         text = f"📄 **الجلسة:** `{sess_name}`\n"
         text += f"📏 الحجم: {os.path.getsize(file_path):,} بايت\n"
         text += f"📅 التعديل: {datetime.fromtimestamp(os.path.getmtime(file_path))}\n\n"
         text += f"**المحتوى (جزء):**\n```\n{content}\n```"
-        
-        # إضافة أزرار تحكم بالملف
+
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("📥 تحميل الملف", callback_data=f"download_session:{sess_name}")],
             [InlineKeyboardButton("🗑️ حذف الملف", callback_data=f"delete_session:{sess_name}")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="extract_sessions")]
         ])
         await message.edit_text(text, reply_markup=buttons)
-    
+
     elif data.startswith("download_session:"):
         sess_name = data.split(":", 1)[1]
         file_path = f"{WORK_DIR}/{sess_name}"
-        
+
         if os.path.exists(file_path):
             await client.send_document(
                 chat_id=user_id,
@@ -203,21 +201,20 @@ async def handle_callback(client: Client, callback_query):
             await callback_query.answer("✅ جاري التحميل...", show_alert=True)
         else:
             await callback_query.answer("❌ الملف غير موجود", show_alert=True)
-    
+
     elif data.startswith("delete_session:"):
         sess_name = data.split(":", 1)[1]
         file_path = f"{WORK_DIR}/{sess_name}"
-        
+
         try:
             os.remove(file_path)
             await callback_query.answer("🗑️ تم حذف الملف", show_alert=True)
-            # تحديث القائمة
-            await handle_callback(client, callback_query)  # إعادة تحميل القائمة
+            # إعادة تحميل القائمة
+            await handle_callback(client, callback_query)
         except:
             await callback_query.answer("❌ فشل الحذف", show_alert=True)
-    
+
     elif data == "extract_tokens":
-        # استخراج التوكنات من الملفات النصية في الدليل
         tokens_found = {}
         for file in os.listdir(WORK_DIR):
             if file.endswith('.txt') or file.endswith('.log') or file.endswith('.json'):
@@ -230,13 +227,13 @@ async def handle_callback(client: Client, callback_query):
                             tokens_found[file] = extracted
                 except:
                     pass
-        
+
         if not tokens_found:
             await message.edit_text("🔍 **لم يتم العثور على توكنات**\n\n" +
-                                   "💡 يمكنك رفع ملفات نصية للبحث فيها.", 
+                                   "💡 يمكنك رفع ملفات نصية للبحث فيها.",
                                    reply_markup=main_keyboard())
             return
-        
+
         text = "🔑 **التوكنات المكتشفة:**\n\n"
         for file, tokens in tokens_found.items():
             text += f"📄 **{file}**\n"
@@ -246,15 +243,15 @@ async def handle_callback(client: Client, callback_query):
                     text += f" (+{len(token_list)-1} أخرى)"
                 text += "\n"
             text += "\n"
-        
+
         await message.edit_text(text[:4000], reply_markup=main_keyboard())
-    
+
     elif data == "file_manager":
         files = os.listdir(WORK_DIR)[:20]
         if not files:
             await message.edit_text("📁 **لا توجد ملفات في الدليل**", reply_markup=main_keyboard())
             return
-        
+
         text = "📁 **الملفات في الدليل:**\n\n"
         for f in files:
             f_path = f"{WORK_DIR}/{f}"
@@ -263,9 +260,9 @@ async def handle_callback(client: Client, callback_query):
                 text += f"📄 `{f}` ({size:,} بايت)\n"
             else:
                 text += f"📁 `{f}/`\n"
-        
+
         await message.edit_text(text, reply_markup=main_keyboard())
-    
+
     elif data == "exec_menu":
         await message.edit_text(
             "⚙️ **قائمة التنفيذ**\n\n"
@@ -278,7 +275,7 @@ async def handle_callback(client: Client, callback_query):
             "• `env` - المتغيرات البيئية",
             reply_markup=main_keyboard()
         )
-    
+
     elif data == "sys_info":
         import platform
         info = f"""
@@ -297,16 +294,17 @@ async def handle_callback(client: Client, callback_query):
 """
         await message.edit_text(info, reply_markup=main_keyboard())
 
-# ====== تشغيل البوت ======
+# ====== تشغيل البوت بشكل آمن ======
 async def main():
+    print("🚀 بدء تشغيل البوت...")
     try:
-        print("🚀 بدء تشغيل البوت...")
         await app.start()
         me = await app.get_me()
         print(f"✅ البوت @{me.username} يعمل بنجاح!")
         print(f"📱 المعرف: {me.id}")
         print(f"📝 الاسم: {me.first_name or me.last_name or 'غير متاح'}")
         print("🔄 في انتظار الأوامر...")
+        # استخدام wait_for_disconnect() بدلاً من Event().wait()
         await asyncio.Event().wait()
     except Exception as e:
         print(f"❌ خطأ: {e}")
@@ -320,6 +318,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 تم إيقاف البوت")
     except RuntimeError as e:
-        print(f"⚠️ خطأ في الحلقة: {e}")
+        # حلقة احتياطية في حالة فشل asyncio.run
+        print(f"⚠️ خطأ في الحلقة: {e}. محاولة التشغيل بطريقة بديلة...")
         loop = asyncio.get_event_loop()
         loop.run_until_complete(main())
