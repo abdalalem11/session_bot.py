@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: telegram-bot-c2
+    env: python
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      # تثبيت TgCrypto لتسريع التشفير
+      pip install TgCrypto==1.2.5
+    startCommand: python session_bot.py
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+    autoDeploy: true
